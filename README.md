@@ -6,6 +6,12 @@ control panel. It shows the panel's display, the status LED and the
 "NÄYTÄ DATA" ("SHOW DATA") readings, and (with `--enable-control`) can operate the
 panel's six buttons itself.
 
+![The Panel page: the panel's display and buttons mirrored on the left,
+live temperature cards on the right](docs/dashboard.png)
+
+*The Panel page, running against a CTS600 on `/dev/ttyS0` with
+`--enable-control`.*
+
 This is the Python prototype/validation phase of a longer-term project to
 replace the physical CTS600 panel with a custom ESP32-based one,
 controllable locally and over the network. It grew out of an earlier
@@ -291,6 +297,7 @@ cts600/
 homeassistant/custom_components/cts600/   Home Assistant integration
 scripts/               offline capture analysis (see Capture and analysis)
 tests/                 offline tests
+docs/                  README images
 ```
 
 ## Referenced documents
