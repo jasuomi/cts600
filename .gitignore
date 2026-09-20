@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Runtime data written by the dashboard (sensor/readings/comment persistence,
+# capture logs) - not source, not documentation
+/data/
+/sessions/
+*.jsonl
+capture_start_and_buttons.json
+
+# Vendor protocol documentation (not this project's own writing)
+Prot485.pdf
+Nilan_CTS_600_Modbus_V1.33.pdf
+
+# AI working notes - a running research log for AI assistant sessions,
+# not user-facing documentation
+CLAUDE.md
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/

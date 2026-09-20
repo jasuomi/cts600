@@ -1,0 +1,73 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nilan CTS600 -paneelisilta",
+        "description": "RS485-väylään kytketyn CTS600-palvelun (python -m cts600) osoite. Käynnistä se valitsimella --http-host 0.0.0.0, ja valitsimella --enable-control, jos asetuksia muutetaan Home Assistantista.",
+        "data": {
+          "host": "Osoite",
+          "port": "Portti"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "CTS600-palveluun ei saatu yhteyttä.",
+      "not_cts600": "Osoite vastasi, mutta se ei ole CTS600-palvelu v1.0."
+    },
+    "abort": {
+      "already_configured": "Tämä CTS600-palvelu on jo määritetty."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CTS600-asetukset",
+        "data": {
+          "refresh_minutes": "Päivitä lukemat välein (min, 0 = ei koskaan)",
+          "max_age_minutes": "Lukema ei saatavilla, kun vanhempi kuin (min, 0 = ei koskaan)"
+        },
+        "data_description": {
+          "refresh_minutes": "Käy läpi paneelin NÄYTÄ DATA -valikon lämpötilojen lukemiseksi. Paneelin näyttö vaihtuu noin minuutiksi; palvelu ohittaa päivityksen, jos paneelia käytetään. Vähintään {min_refresh} minuuttia.",
+          "max_age_minutes": "Lukemat päivittyvät vain, kun datanäyttö on paneelissa esillä."
+        }
+      }
+    },
+    "error": {
+      "refresh_too_often": "Käytä arvoa 0 tai vähintään {min_refresh} minuuttia."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "compressor": { "name": "Kompressori" },
+      "alarm": { "name": "Hälytys" },
+      "water_heating": { "name": "Käyttöveden lämmitys" },
+      "boost": { "name": "Tehostettu ilmanvaihto" },
+      "bus_problem": { "name": "Väylähäiriö" },
+      "operation_running": { "name": "Paneelitoiminto käynnissä" }
+    },
+    "button": {
+      "update_readings": { "name": "Päivitä lukemat" },
+      "cancel_update": { "name": "Peruuta lukemien päivitys" },
+      "key_esc": { "name": "Paneelin näppäin Esc" },
+      "key_up": { "name": "Paneelin näppäin ylös" },
+      "key_down": { "name": "Paneelin näppäin alas" },
+      "key_enter": { "name": "Paneelin näppäin Enter" },
+      "key_on": { "name": "Paneelin näppäin päälle" },
+      "key_off": { "name": "Paneelin näppäin pois" }
+    },
+    "sensor": {
+      "room": { "name": "Huonelämpötila" },
+      "outdoor": { "name": "Ulkolämpötila" },
+      "tank_top": { "name": "Vesisäiliö ylä" },
+      "tank_bottom": { "name": "Vesisäiliö ala" },
+      "supply": { "name": "Lämmityksen menovesi" },
+      "condenser": { "name": "Lauhdutin" },
+      "status": { "name": "Nykytila" },
+      "readings_updated": { "name": "Lukemat päivitetty" },
+      "last_operation": {
+        "name": "Viimeisin paneelitoiminto",
+        "state": { "done": "Valmis", "cancelled": "Peruutettu", "stopped": "Keskeytyi" }
+      }
+    }
+  }
+}

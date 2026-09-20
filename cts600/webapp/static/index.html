@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>CTS600</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="/static/style.css?v=102" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">CTS600</span>
+      <span class="brand-sub" id="brand-version">v1.0</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="panel">Panel</button>
+      <button class="tab-btn" data-tab="diagnostics">Diagnostics</button>
+      <a class="tab-btn tab-link" href="/static/docs.html" target="_blank" rel="noopener">Docs &#8599;</a>
+    </nav>
+    <div class="status" id="status">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">connecting&hellip;</span>
+    </div>
+  </header>
+
+  <div class="bus-health-warning" id="bus-health-warning" hidden></div>
+
+  <main>
+    <div id="tab-panel" class="tab-panel panel-layout">
+      <section class="card panel-card" aria-label="Controller panel">
+        <div class="card-head card-head-end">
+          <span class="led" id="led" title="Status LED: on while the compressor runs, blinks on an alarm">
+            <span class="led-dot" id="led-dot"></span><span>Status</span>
+          </span>
+        </div>
+        <div class="lcd">
+          <div class="lcd-lines" id="lcd">
+            <div class="lcd-line lcd-placeholder">no display data yet</div>
+          </div>
+          <ul class="lcd-notes" id="lcd-notes" hidden></ul>
+        </div>
+        <div class="controls-grid" id="controls-frame" aria-label="Panel controls" hidden>
+          <button class="ctrl-btn ctrl-power" data-key="on">On</button>
+          <button class="ctrl-btn ctrl-nav" data-key="up" aria-label="Up">&uarr;</button>
+          <button class="ctrl-btn" data-key="enter">Enter</button>
+          <button class="ctrl-btn ctrl-power" data-key="off">Off</button>
+          <button class="ctrl-btn ctrl-nav" data-key="down" aria-label="Down">&darr;</button>
+          <button class="ctrl-btn" data-key="esc">Esc</button>
+        </div>
+        <div class="controls-disabled" id="controls-disabled" hidden>
+          Control is off &mdash; start with <code>--enable-control</code> to use the buttons and refresh readings.
+        </div>
+        <div class="press-error" id="press-error" hidden></div>
+      </section>
+
+      <section class="card data-card" aria-label="NÄYTÄ DATA readings">
+        <div class="card-head card-head-end">
+          <button class="update-btn cancel-btn" id="cancel-btn" hidden>Cancel</button>
+          <button class="update-btn" id="update-btn" hidden>Update</button>
+        </div>
+        <div class="walk-status" id="walk-status" hidden></div>
+        <div class="readings-grid" id="readings-grid"></div>
+      </section>
+    </div>
+
+    <div id="tab-diagnostics" class="tab-panel" hidden>
+      <section class="card">
+        <h2>Bus</h2>
+        <dl class="meta-grid">
+          <div><dt>Node</dt><dd id="meta-node">&mdash;</dd></div>
+          <div><dt>Mode</dt><dd id="meta-mode">&mdash;</dd></div>
+          <div><dt>Frames</dt><dd id="meta-frames">0</dd></div>
+          <div><dt>CRC errors</dt><dd id="meta-crc">0</dd></div>
+          <div><dt>Screen</dt><dd id="meta-screen">&mdash;</dd></div>
+        </dl>
+      </section>
+
+      <section class="data-grid">
+        <div class="card">
+          <h2>Output / input registers</h2>
+          <table id="reg-table"><tbody></tbody></table>
+        </div>
+        <div class="card">
+          <h2>Bit fields</h2>
+          <table id="bit-table"><tbody></tbody></table>
+        </div>
+        <div class="card">
+          <h2>Device (power-up REPORT_SLAVE_ID)</h2>
+          <table id="slaveid-table"><tbody></tbody></table>
+        </div>
+      </section>
+
+      <section class="log-section">
+        <div class="log-header">
+          <h2>Live frame log</h2>
+          <form id="note-form" class="note-form">
+            <input id="note-input" type="text" placeholder="note, e.g. pressed UP button" autocomplete="off" />
+            <button type="submit">add note</button>
+          </form>
+          <button id="clear-log">clear view</button>
+        </div>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/app.js?v=102"></script>
+</body>
+</html>

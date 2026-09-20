@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Nilan CTS600 panel bridge: a round badge with the Finnish flag
+       (18:11, cross 3 units wide, vertical bar at 5 to 8), and the control
+       panel (amber LCD, status LED, six keys) sitting on the
+       horizontal bar right of the vertical one.
+       Rendered to ../custom_components/cts600/brand/*.png by render_brand.py. -->
+  <defs>
+    <clipPath id="disc">
+      <circle cx="256" cy="256" r="240"/>
+    </clipPath>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#353a42"/>
+      <stop offset="1" stop-color="#1c1f24"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0" stop-color="#ffb300" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffb300" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="led" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="0.55" stop-color="#ffb300"/>
+      <stop offset="1" stop-color="#ffb300" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- flag, one unit = 480/11 px; flag centred on the disc -->
+  <g clip-path="url(#disc)">
+    <rect x="0" y="0" width="512" height="512" fill="#ffffff"/>
+    <rect x="81.5" y="0" width="130.9" height="512" fill="#003580"/>
+    <rect x="0" y="190.5" width="512" height="130.9" fill="#003580"/>
+  </g>
+  <circle cx="256" cy="256" r="240" fill="none" stroke="#003580" stroke-width="16"/>
+
+  <!-- panel, the 416x456 drawing scaled 0.5 to 208x228 at (238, 142) -->
+  <g transform="translate(214 128) scale(0.5)">
+    <!-- shadow -->
+    <rect x="60" y="44" width="416" height="456" rx="72" fill="#000000" opacity="0.28"/>
+    <!-- body -->
+    <rect x="48" y="28" width="416" height="456" rx="72" fill="url(#body)" stroke="#5a616c" stroke-width="10"/>
+
+    <!-- status LED -->
+    <circle cx="388" cy="60" r="20" fill="url(#led)"/>
+    <circle cx="388" cy="60" r="8" fill="#ffc53d"/>
+
+    <!-- LCD -->
+    <rect x="92" y="92" width="328" height="176" rx="24" fill="#0b0c0f" stroke="#454b55" stroke-width="6"/>
+    <rect x="98" y="98" width="316" height="164" rx="20" fill="url(#glow)"/>
+    <g stroke="#ffb300" stroke-width="17" stroke-linecap="round" fill="none">
+      <!-- "2": a b g e d -->
+      <path d="M178 128 H228 M242 138 V172 M178 180 H228 M164 188 V222 M178 232 H228"/>
+      <!-- "1": b c -->
+      <path d="M300 138 V172 M300 188 V222"/>
+      <!-- degree -->
+      <circle cx="346" cy="140" r="12" stroke-width="11"/>
+    </g>
+
+    <!-- keys: power / up / cooling, (empty) / down / heating -->
+    <g stroke-width="8">
+      <rect x="92" y="302" width="96" height="66" rx="18" fill="#121418" stroke="#ffb300"/>
+      <rect x="208" y="302" width="96" height="66" rx="18" fill="#121418" stroke="#4a505a"/>
+      <rect x="324" y="302" width="96" height="66" rx="18" fill="#121418" stroke="#4a505a"/>
+      <rect x="208" y="388" width="96" height="66" rx="18" fill="#121418" stroke="#4a505a"/>
+      <rect x="324" y="388" width="96" height="66" rx="18" fill="#121418" stroke="#4a505a"/>
+    </g>
+    <g stroke="#c9ced6" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M240 344 L256 328 L272 344"/>
+      <path d="M240 414 L256 430 L272 414"/>
+    </g>
+    <!-- power -->
+    <g stroke="#ffb300" stroke-width="9" stroke-linecap="round" fill="none">
+      <path d="M129 322 A18 18 0 1 0 151 322"/>
+      <path d="M140 314 V333"/>
+    </g>
+    <!-- snowflake: six arms, each with a small V near its tip -->
+    <g stroke="#8fd0ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path id="arm" d="M372 335 V312 M365 316 L372 323 L379 316"/>
+      <use href="#arm" transform="rotate(60 372 335)"/>
+      <use href="#arm" transform="rotate(120 372 335)"/>
+      <use href="#arm" transform="rotate(180 372 335)"/>
+      <use href="#arm" transform="rotate(240 372 335)"/>
+      <use href="#arm" transform="rotate(300 372 335)"/>
+    </g>
+    <!-- flame -->
+    <path d="M372 399 C383 411 391 419 391 429 A19 19 0 0 1 353 429 C353 419 361 411 372 399 Z" fill="#ff7a1a"/>
+    <path d="M372 417 C377 423 381 428 381 433 A9 9 0 0 1 363 433 C363 428 367 423 372 417 Z" fill="#ffd166"/>
+  </g>
+</svg>

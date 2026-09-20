@@ -1,0 +1,7 @@
+# This project targets Linux. Normalise to LF in the repository and on
+# checkout, so a clone made on Windows still produces a shell script the
+# container can run and Python files without stray CR bytes.
+* text=auto eol=lf
+
+*.png binary
+*.jsonl -text

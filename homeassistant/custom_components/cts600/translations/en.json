@@ -1,0 +1,73 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Nilan CTS600 panel bridge",
+        "description": "Address of the CTS600 service (python -m cts600) running on the RS485 bus. Start it with --http-host 0.0.0.0, and with --enable-control to change settings from Home Assistant.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Couldn't reach the CTS600 service.",
+      "not_cts600": "That address answered, but it isn't a CTS600 service v1.0."
+    },
+    "abort": {
+      "already_configured": "This CTS600 service is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CTS600 options",
+        "data": {
+          "refresh_minutes": "Update readings every (minutes, 0 = never)",
+          "max_age_minutes": "Show readings as unavailable after (minutes, 0 = never)"
+        },
+        "data_description": {
+          "refresh_minutes": "Walks the panel's NÄYTÄ DATA menu to read the temperatures. This changes what the real panel shows for about a minute; the service skips it while someone is using the panel. At least {min_refresh} minutes.",
+          "max_age_minutes": "Readings only change when a data screen is shown on the panel."
+        }
+      }
+    },
+    "error": {
+      "refresh_too_often": "Use 0 or at least {min_refresh} minutes."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "compressor": { "name": "Compressor" },
+      "alarm": { "name": "Alarm" },
+      "water_heating": { "name": "Water heating" },
+      "boost": { "name": "Ventilation boost" },
+      "bus_problem": { "name": "Bus problem" },
+      "operation_running": { "name": "Panel operation running" }
+    },
+    "button": {
+      "update_readings": { "name": "Update readings" },
+      "cancel_update": { "name": "Cancel readings update" },
+      "key_esc": { "name": "Panel key Esc" },
+      "key_up": { "name": "Panel key Up" },
+      "key_down": { "name": "Panel key Down" },
+      "key_enter": { "name": "Panel key Enter" },
+      "key_on": { "name": "Panel key On" },
+      "key_off": { "name": "Panel key Off" }
+    },
+    "sensor": {
+      "room": { "name": "Room temperature" },
+      "outdoor": { "name": "Outdoor temperature" },
+      "tank_top": { "name": "Water tank top temperature" },
+      "tank_bottom": { "name": "Water tank bottom temperature" },
+      "supply": { "name": "Heating supply temperature" },
+      "condenser": { "name": "Condenser temperature" },
+      "status": { "name": "Operating state" },
+      "readings_updated": { "name": "Readings updated" },
+      "last_operation": {
+        "name": "Last panel operation",
+        "state": { "done": "Done", "cancelled": "Cancelled", "stopped": "Stopped" }
+      }
+    }
+  }
+}
