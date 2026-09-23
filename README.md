@@ -265,7 +265,11 @@ Record a session, annotating it as you go:
 python -m cts600 --capture-file sessions/live.jsonl
 ```
 
-Every decoded event is appended as one JSON object per line. While it
+Every decoded event is appended as one JSON object per line. Raw frames
+(`"type": "raw"`, the hex bytes) go in only when they're bad-CRC or
+nothing decoded them (e.g. sensor-read replies); a frame that became a
+`reg_block`/`bit_block` event would just repeat it. The dashboard's live
+frame log still shows every raw frame. While it
 runs, type into the **add note** box on the Panel page (or `POST
 /api/note`) at the moment you do something — "pressed UP", "set fan to
 3". Dashboard button presses, Update walks and settings changes note

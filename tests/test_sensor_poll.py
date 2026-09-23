@@ -94,6 +94,42 @@ class ReadSensorBlockTests(unittest.TestCase):
         self.assertEqual(self.writes, [])
 
 
+class CaptureRawTests(unittest.TestCase):
+    """Raw frames reach the capture file only when bad or not decoded into
+    another event; the live frame log (recent_log / websocket) gets all."""
+
+    def setUp(self):
+        self.state = state_mod.DeviceState()
+        self.captured: list[dict] = []
+        self.state.attach_capture_log(mock.Mock(write=self.captured.append))
+        self.listener = passive_listener.PassiveListener(self.state)
+
+    def feed(self, data: bytes):
+        self.listener._on_raw_frame(transport.RawFrame(time.time(), data))
+
+    def captured_types(self):
+        return [e["type"] for e in self.captured]
+
+    def live_raw(self):
+        return [e for e in self.state.snapshot()["recent_log"] if e["type"] == "raw"]
+
+    def test_decoded_frame_is_captured_once(self):
+        self.feed(protocol.encode_frame(3, 0x42, protocol.encode_reg_block(0x0100, [0])))
+        self.assertEqual(self.captured_types(), ["reg_block"])
+        self.assertEqual(len(self.live_raw()), 1)
+
+    def test_bad_crc_frame_is_captured_raw(self):
+        good = protocol.encode_frame(3, 0x42, protocol.encode_reg_block(0x0100, [0]))
+        self.feed(good[:-1] + bytes([good[-1] ^ 0xFF]))
+        self.assertEqual(self.captured_types(), ["raw"])
+        self.assertFalse(self.captured[0]["crc_ok"])
+
+    def test_undecoded_sensor_reply_is_captured_raw(self):
+        self.feed(reply_frame(STEP0_WORDS))  # FC4: no decoded event of its own
+        self.assertEqual(self.captured_types(), ["raw"])
+        self.assertEqual(self.captured[0]["fc"], "0x04")
+
+
 @unittest.skipIf(TestClient is None, "fastapi not available")
 class PacerTests(unittest.TestCase):
     def test_normal_by_default(self):

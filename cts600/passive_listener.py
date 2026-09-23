@@ -394,38 +394,46 @@ class PassiveListener:
             return
 
         self.state.note_frame(frame)
-        self.state.note_raw(frame.address, frame.function, frame.raw, frame.crc_ok)
 
         if not frame.crc_ok:
+            self.state.note_raw(frame.address, frame.function, frame.raw, frame.crc_ok)
             return  # per the doc: bad-CRC frames are simply discarded
 
         waiting = self._read_waiting
         if waiting is not None and frame.base_function == waiting and frame.address == protocol.NODE_STYREENHED_1:
             self._read_replies.put(raw_frame)
 
+        decoded = False
         try:
-            self._decode_payload(frame)
+            decoded = self._decode_payload(frame)
         except Exception:  # keep the listener alive even on a parse bug
             log.exception("Failed to decode frame: %s", protocol.hexdump(frame.raw))
+        self.state.note_raw(frame.address, frame.function, frame.raw, frame.crc_ok, capture=not decoded)
 
-    def _decode_payload(self, frame: protocol.Frame) -> None:
+    def _decode_payload(self, frame: protocol.Frame) -> bool:
+        """Turn the frame into its decoded event, if it has one. False if
+        nothing did (e.g. FC4 sensor-read replies, exception replies, an
+        unparseable payload): then its raw event is the only record."""
         fc = frame.base_function
 
         if fc == protocol.FunctionCode.WI_RO_REGS:
             block = protocol.parse_reg_block(frame.data)
             if block:
                 self.state.note_reg_block(frame.address, frame.function, block)
+                return True
 
         elif fc == protocol.FunctionCode.WI_RO_BITS:
             block = protocol.parse_bit_block(frame.data)
             if block:
                 self.state.note_bit_block(frame.address, frame.function, block)
+                return True
 
         elif fc == protocol.FunctionCode.REPORT_SLAVE_ID:
             slave_id = protocol.parse_slave_id(frame.data)
             if slave_id:
                 self.state.note_slave_id(slave_id)
+                return True
 
-        # FC 3/16 (plain read/write output regs) and others: not yet
-        # given dedicated handling. They still show up in the raw log
-        # via note_raw() above.
+        # FC 3/4/16 and others: no dedicated handling; the raw event (kept
+        # in the capture) is their record.
+        return False

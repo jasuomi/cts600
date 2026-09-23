@@ -454,7 +454,11 @@ class DeviceState:
             self.slave_id = slave_id
         self._log_and_publish({"type": "slave_id", "slave_id": vars(slave_id)})
 
-    def note_raw(self, address: int, fc: int, raw: bytes, crc_ok: bool) -> None:
+    def note_raw(self, address: int, fc: int, raw: bytes, crc_ok: bool, capture: bool = True) -> None:
+        """Every frame goes to the live frame log; capture=False keeps it
+        out of the capture file, for a frame already captured as a decoded
+        event (reg_block/bit_block/slave_id) -- logging those twice was
+        about half the capture's ~65 MB/day."""
         event = {
             "type": "raw",
             "timestamp": time.time(),
@@ -463,7 +467,7 @@ class DeviceState:
             "crc_ok": crc_ok,
             "hex": protocol.hexdump(raw),
         }
-        self._log_and_publish(event, log_only=True)
+        self._log_and_publish(event, capture=capture)
 
     # -- persistent capture logging ---------------------------------------
 
@@ -486,12 +490,12 @@ class DeviceState:
         event = {"type": "note", "text": text}
         self._log_and_publish(event)
 
-    def _log_and_publish(self, event: dict[str, Any], log_only: bool = False) -> None:
+    def _log_and_publish(self, event: dict[str, Any], capture: bool = True) -> None:
         event.setdefault("timestamp", time.time())
         with self._lock:
             self._raw_log.append(event)
             capture_log = self._capture_log
-        if capture_log is not None:
+        if capture_log is not None and capture:
             capture_log.write(event)
         self._publish(event)
 
