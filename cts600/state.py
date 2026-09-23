@@ -18,7 +18,7 @@ from typing import Any
 
 from . import display_data, protocol, sensor_regs
 from .display_decoder import DisplayBuffer
-from .regmap import INPUT_BITS, OUTPUT_REGS, describe_reg
+from .regmap import OUTPUT_BITS, OUTPUT_REGS, describe_reg
 
 log = logging.getLogger(__name__)
 
@@ -212,7 +212,6 @@ class DeviceState:
         self.output_regs: dict[int, int] = {}
         self.input_regs: dict[int, int] = {}
         self.output_bits: dict[int, list[int]] = {}
-        self.input_bits: dict[int, list[int]] = {}
         self.display = DisplayBuffer()
         self.slave_id: protocol.SlaveId | None = None
 
@@ -365,7 +364,6 @@ class DeviceState:
     def note_bit_block(self, address: int, fc: int, block: protocol.BitBlock) -> None:
         with self._lock:
             self.output_bits[block.start_bit] = block.bits()
-            self.input_bits[block.start_bit] = block.bits()
 
         event = {
             "type": "bit_block",
@@ -373,7 +371,7 @@ class DeviceState:
             "fc": fc,
             "start_bit": f"0x{block.start_bit:04X}",
             "bits": block.bits(),
-            "label": describe_reg(INPUT_BITS, block.start_bit),
+            "label": describe_reg(OUTPUT_BITS, block.start_bit),
         }
         self._log_and_publish(event)
 
@@ -599,7 +597,6 @@ class DeviceState:
                 "output_regs": {f"0x{k:04X}": v for k, v in self.output_regs.items()},
                 "input_regs": {f"0x{k:04X}": v for k, v in self.input_regs.items()},
                 "output_bits": {f"0x{k:04X}": v for k, v in self.output_bits.items()},
-                "input_bits": {f"0x{k:04X}": v for k, v in self.input_bits.items()},
                 "display": self.display.snapshot(),
                 "slave_id": vars(self.slave_id) if self.slave_id else None,
                 "screen": screen_at[0].key if screen_at else None,

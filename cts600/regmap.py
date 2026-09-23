@@ -213,39 +213,28 @@ DISPLAY_REG_END = 0x0FFF
 OUTPUT_BITS: dict[int, RegInfo] = {
     0x0000: RegInfo("Diskrete digitale udgange (relæer etc.)"),
     0x0100: RegInfo(
-        "LED + blink bits",
-        "2 bits per LED: bit0=on/off, bit1=blink.",
+        "Status LED (bit0 on = compressor running, bit1 = blink/alarm)",
+        "2 bits per LED: bit0=on/off, bit1=blink; this panel has one LED. "
+        "Per the panel operator (2026-09-16) it's a STATUS LED -- on while "
+        "the compressor runs, BLINKING on an alarm. bit0 was watched live "
+        "side by side with the physical LED and tracks it exactly. Also "
+        "explains the ~98s delay between pressing On and this bit lighting "
+        "up in sessions/keymap-20260913-212233.jsonl: compressor start "
+        "delay/anti-short-cycle protection, not a button-press echo. bit1 "
+        "has been 0 in every capture so far -- unconfirmed until a capture "
+        "during an alarm. Carried by the one FC65 frame on this bus "
+        "(03 41 01 00 00 02 00 01 01 D4 0A with the compressor on); no "
+        "second FC65 frame (panel inputs) has ever been seen -- keys go "
+        "through the _AID_xxx register (OUTPUT_REGS 0x0100) instead.",
     ),
 }
 
 # --- Input bits (Modbus ref. 1x) --------------------------------------------
+# Never seen on this bus: the only FC65 frame carries the status LED
+# (OUTPUT_BITS 0x0100), and the panel reports keys through the _AID_xxx
+# register rather than discrete keyboard bits.
 INPUT_BITS: dict[int, RegInfo] = {
     0x0000: RegInfo("Diskrete digitale indgange"),
-    0x0100: RegInfo(
-        "Mislabeled -- actually the panel's status LED (OUTPUT_BITS 0x0100)",
-        "Per the panel operator (2026-09-16): the one LED is a STATUS LED -- "
-        "on while the compressor runs, BLINKING on an alarm. The dashboard "
-        "labels it just \"Status\". "
-        "CONFIRMED, not just hypothesis: bit0 was watched live side by "
-        "side with the physical panel's compressor indicator LED (via "
-        "the dashboard's Compressor LED indicator, app.js::renderLed) "
-        "and it tracks it exactly. This is genuinely OUTPUT_BITS "
-        "0x0100 ('LED + blink bits: bit0=on/off, bit1=blink'), not "
-        "INPUT_BITS/keyboard -- it's filed under INPUT_BITS here only "
-        "because state.py::note_bit_block doesn't distinguish query/"
-        "response direction on the bus and always applies the "
-        "INPUT_BITS label to every bit_block event, regardless of "
-        "which one it actually is. Also explains the ~98s delay "
-        "observed between pressing On and this bit lighting up in "
-        "sessions/keymap-20260913-212233.jsonl: compressor start "
-        "delay/anti-short-cycle protection, not a button-press echo. "
-        "bit1 ('blink', meant to indicate an alarm) has been 0 in "
-        "every capture so far -- still unconfirmed, needs a capture "
-        "during a real/test alarm condition. The real keyboard-bits "
-        "register (if the controller even reports discrete keyboard "
-        "state at all, as opposed to only the _AID_xxx action code) "
-        "remains unidentified.",
-    ),
 }
 
 

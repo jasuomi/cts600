@@ -241,6 +241,15 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(snap["panel"]["mode"], "auto")
         self.assertEqual(snap["panel"]["setpoint"], 22)
 
+    def test_led_bit_block_is_labelled_as_the_status_led(self):
+        state = state_mod.DeviceState(readings_path=None)
+        captured = []
+        state.attach_capture_log(mock.Mock(write=captured.append))
+        state.note_bit_block(3, 0x41, protocol.BitBlock(0x0100, 2, 1, bytes([0b01])))
+        self.assertTrue(captured[-1]["label"].startswith("Status LED"))
+        self.assertNotIn("input_bits", state.snapshot())
+        self.assertEqual(state.snapshot()["output_bits"]["0x0100"][0], 1)
+
     def test_snapshot_edit_status_has_ages_like_walk_status(self):
         state = state_mod.DeviceState(readings_path=None)
         state.set_edit_status(running=False, outcome="done", message="fan set to 3",

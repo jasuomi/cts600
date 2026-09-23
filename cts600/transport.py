@@ -135,6 +135,11 @@ def open_serial(port: Optional[str] = None) -> serial.Serial:
     # in receive-enabled state by default instead of relying on
     # pyserial's opposite default.
     ser.rts = False
+    # Drop whatever was waiting in the OS/adapter buffer before we opened:
+    # read in one go it has no gaps for FrameReader to split on, and came
+    # out as one oversized bad-CRC "frame" of back-to-back repeats at two
+    # service starts on 2026-09-23 (12770 and 746 bytes).
+    ser.reset_input_buffer()
     return ser
 
 
