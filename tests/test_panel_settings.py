@@ -226,5 +226,30 @@ class StatusTests(unittest.TestCase):
         self.assertFalse(status["edit"]["running"])
 
 
+class SnapshotTests(unittest.TestCase):
+    """state.snapshot() (the full /api/state and /ws payload app.js's
+    settings controls read) must carry current mode/setpoint/fan too, and
+    give edit_status the same started_age_s/finished_age_s treatment
+    walk_status already gets -- both are "Operation, N seconds ago" texts
+    in the same UI."""
+
+    def test_snapshot_carries_panel(self):
+        state = state_mod.DeviceState(readings_path=None)
+        for reg, text in ((display_data.LINE1_REG, "AUTO"), (display_data.LINE2_REG, ">3< 22°C")) * 2:
+            state.note_reg_block(3, 0x42, reg_block(reg, encode_line(text)))
+        snap = state.snapshot()
+        self.assertEqual(snap["panel"]["mode"], "auto")
+        self.assertEqual(snap["panel"]["setpoint"], 22)
+
+    def test_snapshot_edit_status_has_ages_like_walk_status(self):
+        state = state_mod.DeviceState(readings_path=None)
+        state.set_edit_status(running=False, outcome="done", message="fan set to 3",
+                               steps=4, started_at=100.0, finished_at=105.0)
+        snap = state.snapshot()
+        self.assertIn("started_age_s", snap["edit"])
+        self.assertIn("finished_age_s", snap["edit"])
+        self.assertGreater(snap["edit"]["finished_age_s"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

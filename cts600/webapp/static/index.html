@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>CTS600</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="/static/style.css?v=102" />
+  <link rel="stylesheet" href="/static/style.css?v=103" />
 </head>
 <body>
   <header class="topbar">
@@ -39,6 +39,34 @@
           </div>
           <ul class="lcd-notes" id="lcd-notes" hidden></ul>
         </div>
+        <div class="settings-grid" id="settings-frame" aria-label="Settings" hidden>
+          <div class="setting">
+            <div class="setting-label">Mode</div>
+            <div class="setting-buttons" id="mode-buttons">
+              <button class="setting-btn" data-mode="off">Off</button>
+              <button class="setting-btn" data-mode="auto">Auto</button>
+              <button class="setting-btn" data-mode="cool">Cool</button>
+              <button class="setting-btn" data-mode="heat">Heat</button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="setting-label">Setpoint</div>
+            <div class="stepper">
+              <button class="stepper-btn" id="setpoint-down" aria-label="Decrease setpoint">&minus;</button>
+              <div class="stepper-value" id="setpoint-value">&mdash;</div>
+              <button class="stepper-btn" id="setpoint-up" aria-label="Increase setpoint">&plus;</button>
+            </div>
+          </div>
+          <div class="setting">
+            <div class="setting-label">Fan</div>
+            <div class="stepper">
+              <button class="stepper-btn" id="fan-down" aria-label="Decrease fan speed">&minus;</button>
+              <div class="stepper-value" id="fan-value">&mdash;</div>
+              <button class="stepper-btn" id="fan-up" aria-label="Increase fan speed">&plus;</button>
+            </div>
+          </div>
+        </div>
+        <div class="edit-status" id="edit-status" hidden></div>
         <div class="controls-grid" id="controls-frame" aria-label="Panel controls" hidden>
           <button class="ctrl-btn ctrl-power" data-key="on">On</button>
           <button class="ctrl-btn ctrl-nav" data-key="up" aria-label="Up">&uarr;</button>
@@ -48,7 +76,7 @@
           <button class="ctrl-btn" data-key="esc">Esc</button>
         </div>
         <div class="controls-disabled" id="controls-disabled" hidden>
-          Control is off &mdash; start with <code>--enable-control</code> to use the buttons and refresh readings.
+          Control is off &mdash; start with <code>--enable-control</code> to use settings, the buttons and refresh readings.
         </div>
         <div class="press-error" id="press-error" hidden></div>
       </section>
@@ -104,6 +132,6 @@
     </div>
   </main>
 
-  <script src="/static/app.js?v=102"></script>
+  <script src="/static/app.js?v=103"></script>
 </body>
 </html>

@@ -148,7 +148,8 @@ def send_key_press(
         before_write("press")
     if self_check:
         ser.reset_input_buffer()
-    log.info("%s press:   %s", key, protocol.hexdump(press))
+    log.info("%s: press", key)
+    log.debug("%s press:   %s", key, protocol.hexdump(press))
     write(ser, press)
     if self_check:
         echoed = transport.read_for(ser, self_check_seconds)
@@ -163,7 +164,8 @@ def send_key_press(
         before_write("release")
     if self_check:
         ser.reset_input_buffer()
-    log.info("%s release: %s", key, protocol.hexdump(release))
+    log.info("%s: release", key)
+    log.debug("%s release: %s", key, protocol.hexdump(release))
     write(ser, release)
     if self_check:
         echoed = transport.read_for(ser, self_check_seconds)
@@ -178,7 +180,8 @@ def _send_frame(
 ) -> None:
     if self_check:
         ser.reset_input_buffer()
-    log.info("%s: %s", label, protocol.hexdump(frame))
+    log.info("%s", label)
+    log.debug("%s: %s", label, protocol.hexdump(frame))
     write(ser, frame)
     if self_check:
         echoed = transport.read_for(ser, self_check_seconds)

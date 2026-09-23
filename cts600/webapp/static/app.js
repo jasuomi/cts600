@@ -23,6 +23,15 @@ let controlEnabled = false;
 const walkStatusEl = document.getElementById("walk-status");
 const readingsGrid = document.getElementById("readings-grid");
 const logEl = document.getElementById("log");
+const settingsFrame = document.getElementById("settings-frame");
+const modeButtons = document.getElementById("mode-buttons");
+const setpointValueEl = document.getElementById("setpoint-value");
+const setpointDownBtn = document.getElementById("setpoint-down");
+const setpointUpBtn = document.getElementById("setpoint-up");
+const fanValueEl = document.getElementById("fan-value");
+const fanDownBtn = document.getElementById("fan-down");
+const fanUpBtn = document.getElementById("fan-up");
+const editStatusEl = document.getElementById("edit-status");
 
 // A reading older than this is shown grayed out.
 const STALE_SECONDS = 30 * 60;
@@ -86,6 +95,14 @@ for (const r of READINGS) {
 let lastReadings = {};
 let lastSensors = {};
 let lastWalk = { running: false };
+let lastPanel = null;
+let lastEdit = { running: false };
+
+// Mirrors panel_settings.py: SETPOINT_RANGE, FAN_RANGE, MODES (minus off/on,
+// which are folded into these four buttons -- picking auto/cool/heat while
+// off switches the unit on first, same as the physical panel's Enter x2).
+const SETPOINT_RANGE = [5, 30];
+const FAN_RANGE = [1, 4];
 
 // Register temperature statuses (sensor_regs.py): what the card says under
 // the value, and the longer explanation in its tooltip. Anything other than
@@ -147,9 +164,17 @@ function paintReadings() {
   }
 }
 
+// Any panel operation (an Update walk or a settings change) holds the same
+// lock on the server (panel_ops.py): only one runs at a time. Both busy
+// states disable *all* the panel-touching controls, not just their own, so
+// a click doesn't just earn a 409 while the panel's mid-sequence.
+function operationRunning() {
+  return !!(lastWalk && lastWalk.running) || !!(lastEdit && lastEdit.running);
+}
+
 function paintWalk() {
   const w = lastWalk || {};
-  updateBtn.disabled = !!w.running;
+  updateBtn.disabled = operationRunning();
   updateBtn.textContent = w.running ? "Updating…" : "Update";
   cancelBtn.hidden = !(controlEnabled && w.running);
   cancelBtn.disabled = !!w.cancelling;
@@ -167,13 +192,95 @@ function paintWalk() {
   } else {
     walkStatusEl.hidden = true;
   }
+  document.querySelectorAll(".ctrl-btn").forEach((btn) => { btn.disabled = operationRunning(); });
 }
+
+// Settings: mode/setpoint/fan, applied through POST /api/settings
+// (panel_settings.py), which presses Enter/Up/Down/Esc the same way a
+// person would and checks the screen after every press. This replaces
+// blindly counting Enter presses on the raw Up/Down/Enter buttons -- the
+// panel gives no reliable "this field is selected" signal to read back
+// (display_decoder.py has the detail: setpoint blinks, fan shows a static
+// marker, mode shows nothing at all), so edit-status text from the server
+// is the only trustworthy indicator of what's being changed.
+function paintSettings() {
+  const p = lastPanel;
+  const busy = operationRunning();
+  const isOff = !p || p.mode === "off";
+  modeButtons.querySelectorAll(".setting-btn").forEach((btn) => {
+    btn.classList.toggle("active", !!p && p.mode === btn.dataset.mode);
+    btn.disabled = busy || !p;
+  });
+  setpointValueEl.textContent = p && p.setpoint != null ? `${p.setpoint}°C` : "—";
+  fanValueEl.textContent = p && p.fan != null ? p.fan : "—";
+  const setpointKnown = !!p && p.setpoint != null;
+  const fanKnown = !!p && p.fan != null;
+  setpointDownBtn.disabled = busy || isOff || !setpointKnown || p.setpoint <= SETPOINT_RANGE[0];
+  setpointUpBtn.disabled = busy || isOff || !setpointKnown || p.setpoint >= SETPOINT_RANGE[1];
+  fanDownBtn.disabled = busy || isOff || !fanKnown || p.fan <= FAN_RANGE[0];
+  fanUpBtn.disabled = busy || isOff || !fanKnown || p.fan >= FAN_RANGE[1];
+}
+
+function paintEditStatus() {
+  const e = lastEdit || {};
+  editStatusEl.classList.toggle("warn", !e.running && e.outcome === "stopped");
+  if (e.running) {
+    const step = e.steps ? ` · step ${e.steps}` : "";
+    editStatusEl.textContent = `${capitalize(e.message || e.phase || "working")}${step}`;
+    editStatusEl.hidden = false;
+  } else if (e.outcome && e.finished_age_s !== undefined) {
+    const age = formatAge(e.finished_age_s + elapsed());
+    const verb = { done: "", stopped: " stopped" }[e.outcome] ?? ` ${e.outcome}`;
+    editStatusEl.textContent = `Last setting change${verb} ${age}: ${e.message}`;
+    editStatusEl.hidden = false;
+  } else {
+    editStatusEl.hidden = true;
+  }
+}
+
+async function applySetting(payload, trigger) {
+  if (trigger) trigger.disabled = true;
+  hidePressError();
+  try {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      showPressError(`Setting change not started: ${body.error || res.status}`);
+      paintSettings();  // didn't actually start: re-sync disabled state now, don't wait for the next tick
+    }
+    // On success the edit_status push (over /ws) repaints and re-enables
+    // controls once the operation finishes.
+  } catch (e) {
+    showPressError(`Setting change not started: ${e}`);
+    paintSettings();
+  }
+}
+
+modeButtons.querySelectorAll(".setting-btn").forEach((btn) => {
+  btn.addEventListener("click", () => applySetting({ mode: btn.dataset.mode }, btn));
+});
+setpointDownBtn.addEventListener("click", () => {
+  if (lastPanel && lastPanel.setpoint != null) applySetting({ setpoint: lastPanel.setpoint - 1 }, setpointDownBtn);
+});
+setpointUpBtn.addEventListener("click", () => {
+  if (lastPanel && lastPanel.setpoint != null) applySetting({ setpoint: lastPanel.setpoint + 1 }, setpointUpBtn);
+});
+fanDownBtn.addEventListener("click", () => {
+  if (lastPanel && lastPanel.fan != null) applySetting({ fan: lastPanel.fan - 1 }, fanDownBtn);
+});
+fanUpBtn.addEventListener("click", () => {
+  if (lastPanel && lastPanel.fan != null) applySetting({ fan: lastPanel.fan + 1 }, fanUpBtn);
+});
 
 function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-setInterval(() => { paintReadings(); paintWalk(); }, 5000);
+setInterval(() => { paintReadings(); paintWalk(); paintSettings(); paintEditStatus(); }, 5000);
 
 updateBtn.addEventListener("click", async () => {
   updateBtn.disabled = true;
@@ -348,6 +455,7 @@ function renderSnapshot(snap) {
   renderLed((snap.output_bits || {})["0x0100"]);
 
   controlsFrame.hidden = !snap.control_enabled;
+  settingsFrame.hidden = !snap.control_enabled;
   controlsDisabled.hidden = !!snap.control_enabled;
   controlEnabled = !!snap.control_enabled;
   updateBtn.hidden = !controlEnabled;
@@ -356,8 +464,12 @@ function renderSnapshot(snap) {
   lastReadings = snap.readings || {};
   lastSensors = snap.sensors || {};
   lastWalk = snap.walk || { running: false };
+  lastPanel = snap.panel || null;
+  lastEdit = snap.edit || { running: false };
   paintReadings();
   paintWalk();
+  paintSettings();
+  paintEditStatus();
 
   // Backfill the log with recent history on first load only.
   if (logEl.childElementCount === 0 && snap.recent_log) {
@@ -492,7 +604,13 @@ function connect() {
       snapshotReceivedAt = Date.now() / 1000;
       paintWalk();
     }
-    // reg_block / bit_block / slave_id / reading / walk_status: refresh the derived views.
+    if (event.type === "edit_status") {
+      lastEdit = { ...event.status, finished_age_s: event.status.running ? undefined : 0 };
+      snapshotReceivedAt = Date.now() / 1000;
+      paintEditStatus();
+      paintSettings();
+    }
+    // reg_block / bit_block / slave_id / reading: refresh the derived views.
     scheduleSnapshotRefresh();
   };
 

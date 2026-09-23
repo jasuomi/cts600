@@ -176,6 +176,39 @@ class ReanchorDueTests(unittest.TestCase):
         self.assertTrue(self.due(now, last_attempt_at=now - server.REANCHOR_MIN_INTERVAL_SECONDS))
 
 
+@unittest.skipIf(TestClient is None, "fastapi not available")
+class ReanchorPlanTests(unittest.TestCase):
+    def test_nothing_due(self):
+        # Uncertain and settled isn't enough on its own: only a due sensor starts a walk.
+        self.assertIsNone(server.reanchor_plan([], ["tank_top"], ["tank_top"]))
+
+    def test_all_due_is_one_walk_to_the_deepest(self):
+        # After a restart (2026-09-23 23:07): all four uncertain and due.
+        keys = ["tank_top", "tank_bottom", "supply", "condenser"]
+        target, covered = server.reanchor_plan(keys, keys, keys)
+        self.assertEqual(target, "condenser")
+        self.assertEqual(covered, keys)
+
+    def test_passed_uncertain_sensors_are_covered_even_if_not_due_yet(self):
+        target, covered = server.reanchor_plan(["supply"], ["tank_top", "supply"], ["tank_top", "supply"])
+        self.assertEqual(target, "supply")
+        self.assertEqual(covered, ["tank_top", "supply"])
+
+    def test_settled_condenser_extends_a_walk_that_is_happening_anyway(self):
+        # 2026-09-23 23:33: supply due from before a restart, the rest just
+        # went uncertain -- this was two walks (to MENO, then LAUHDUT a
+        # minute later); now it's one.
+        uncertain = ["tank_top", "tank_bottom", "supply", "condenser"]
+        target, covered = server.reanchor_plan(["supply"], uncertain, uncertain)
+        self.assertEqual(target, "condenser")
+        self.assertEqual(covered, uncertain)
+
+    def test_swinging_condenser_does_not_set_the_depth(self):
+        target, covered = server.reanchor_plan(["tank_bottom"], ["tank_bottom", "condenser"], ["tank_bottom"])
+        self.assertEqual(target, "tank_bottom")
+        self.assertEqual(covered, ["tank_bottom"])
+
+
 @unittest.skipIf(TestClient is None, "fastapi TestClient not available")
 class ReadEndpointTests(unittest.TestCase):
     def test_validation_and_read(self):

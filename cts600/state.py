@@ -567,6 +567,11 @@ class DeviceState:
                 walk_status["started_age_s"] = now - walk_status["started_at"]
             if "finished_at" in walk_status:
                 walk_status["finished_age_s"] = now - walk_status["finished_at"]
+            edit_status = dict(self.edit_status)
+            if "started_at" in edit_status:
+                edit_status["started_age_s"] = now - edit_status["started_at"]
+            if "finished_at" in edit_status:
+                edit_status["finished_age_s"] = now - edit_status["finished_at"]
             return {
                 "connected": self.connected,
                 "port": self.port,
@@ -598,11 +603,12 @@ class DeviceState:
                 "display": self.display.snapshot(),
                 "slave_id": vars(self.slave_id) if self.slave_id else None,
                 "screen": screen_at[0].key if screen_at else None,
+                "panel": dict(self.idle_status) if self.idle_status else None,
                 # Ages rather than timestamps, so the browser doesn't
                 # depend on its clock agreeing with the host's.
                 "readings": self.readings.snapshot(now),
                 "sensors": self.sensors.snapshot(now, detail=True),
                 "walk": walk_status,
-                "edit": dict(self.edit_status),
+                "edit": edit_status,
                 "recent_log": list(self._raw_log)[-100:],
             }

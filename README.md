@@ -71,6 +71,21 @@ Options:
   restarts (default `data/display_readings.json`)
 - `--capture-file PATH` — append every decoded event to a JSONL file
   (see Capture and analysis)
+- `--capture-max-bytes N` — rotate `--capture-file` once it reaches this
+  size, `.1`/`.2`/... suffixed, 0 for never (default 20000000 ~ 20 MB)
+- `--capture-backup-count N` — how many rotated-out capture files to keep
+  (default 2)
+- `--log-level {DEBUG,INFO,WARNING,ERROR}` (default `INFO`) — `DEBUG` adds
+  per-poll/per-press bus timing detail that's too noisy for long-running
+  use; `INFO` is state changes, warnings and errors only
+- `--log-file PATH` — log to this size-rotated file instead of stdout (see
+  `--log-max-bytes`/`--log-backup-count`). Meant for a 24/7 install (e.g.
+  a Raspberry Pi) where shell-redirecting stdout to a plain file would
+  otherwise grow without bound; without this, logs go to stdout as before.
+- `--log-max-bytes N` — rotate `--log-file` once it reaches this size
+  (default 2000000 ~ 2 MB)
+- `--log-backup-count N` — how many rotated-out log files to keep (default
+  3, so about 4x `--log-max-bytes` on disk at most)
 
 ## Pages
 
@@ -80,8 +95,19 @@ Options:
   the mode name are spelled out next to them: W = water heating,
   * = ventilation boost.
 - Status LED: on while the compressor runs, blinks on an alarm.
+- Settings (with `--enable-control`): Mode (Off/Auto/Cool/Heat), Setpoint
+  and Fan controls that change the panel through `POST /api/settings`
+  (see "How settings are changed" below) instead of the raw buttons. The
+  panel gives no reliable way to read back which field is selected while
+  editing (setpoint blinks, fan shows a static marker, mode shows nothing
+  at all — see `display_decoder.py`'s notes), so rather than guess from
+  the display, a status line under the controls says what's being changed
+  and how far it's got, e.g. "Setting fan 3 → 4: step 2/5".
 - Buttons: On, Off, Up, Down, Enter, Esc. Each press is timed into the
-  quiet gap between panel and controller exchanges.
+  quiet gap between panel and controller exchanges. Editing settings by
+  hand with these means counting Enter presses yourself (once = setpoint,
+  twice = mode, three times = fan) with no on-screen confirmation of
+  which field is selected — the Settings controls above avoid that.
 - Näytä data ("Show data"): room (T15), outdoor (T1), tank top (T11), tank bottom (T12),
   heating supply (T14) and condenser (T5). A live card says "live"; one
   that needs an Update says so (see below). The fan levels, unit type and
@@ -111,17 +137,26 @@ followed by 2 minutes at the normal rate. Fast polling stops as soon as the
 condenser has lost tracking anyway. After a mode change it can climb from
 2 to 33 °C in minutes, faster than any poll rate can follow.
 
-**Automatic condenser re-anchor** (default with `--enable-control`; turn
-off with `--no-auto-reanchor`). When the condenser value has lost tracking,
-the service walks the panel to the LAUHDUT screen and back by itself: Up,
-Enter, six Downs, two Escs, about 40 s. It shows up like an Update
-("condenser re-anchor (automatic)"), with the same step checks, and only
-when:
+**Automatic re-anchor** (default with `--enable-control`; turn off with
+`--no-auto-reanchor`). When a register temperature has lost tracking --
+tank top, tank bottom, heating supply or condenser (room and outdoor
+track reliably enough in practice not to need this) -- the service walks
+the panel to that sensor's data screen and back by itself, e.g. Up,
+Enter, six Downs, two Escs for the condenser (LAUHDUT), about 40 s. It
+shows up like an Update ("*sensor* re-anchor (automatic)"), with the same
+step checks. Every screen the walk passes anchors its sensor too, so when
+several need it (e.g. all four after a restart) it's one walk, not one
+each: once a due sensor starts a walk, it goes as deep as any uncertain
+sensor that isn't swinging, due yet or not. A walk starts only when a
+sensor is due:
 
-- the condenser has stopped swinging for 60 s, or has been uncertain for 10 minutes
+- it has stopped swinging for 60 s (condenser only -- it's the only one
+  that swings fast enough to track; the others just need 60 s uncertain), or
+  has been uncertain for 10 minutes
 - the panel is on the idle screen, nobody has pressed a key there for 2 minutes,
   and no other panel operation is running
-- at least 10 minutes have passed since the last automatic attempt
+- at least 10 minutes have passed since the last automatic attempt for
+  that sensor (a slow one doesn't block another from re-anchoring)
 
 **Update** walks the menu once (about a minute; each screen takes ~4 s to confirm): Up, Enter, Down
 through the list, then Esc back to idle. It checks every screen before
@@ -200,6 +235,9 @@ minutes** (0 = never).
 
 ### How settings are changed
 
+This is also what the dashboard's own Panel-page Settings controls use
+(see "Pages" above) -- Home Assistant and the dashboard share one path.
+
 `POST /api/settings` with any of `mode` (`off`, `on`, `auto`, `cool`,
 `heat`), `setpoint` (5–30 °C — a loose guard, not the panel's actual
 documented range, which is unknown) and `fan` (1–4) presses keys the way a person
@@ -249,6 +287,18 @@ sequence of intermediate values in a window rather than just the
 endpoints, which matters when a change goes out and comes back.
 `scan_reg_values.py` takes one address and shows every distinct value
 and transition across the whole file. Each takes `--help`.
+
+One more checks the service's own key presses rather than the registers:
+
+```
+python scripts/press_steps.py cts600.log sessions/live.jsonl --since 23:33
+```
+
+For every Down the service pressed (Update, re-anchor, dashboard), it
+shows how many NÄYTÄ DATA screens it moved (should be one), and how soon
+our next transmission followed the release. It exits 1 if any press
+jumped. It needs the run's `--log-file` (at INFO or lower) and
+`--capture-file`.
 
 Captures stay local: `sessions/` and `*.jsonl` are gitignored.
 

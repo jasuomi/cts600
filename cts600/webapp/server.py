@@ -23,9 +23,9 @@ With --enable-control, one thing transmits on its own: the sensor poll,
 an atomic FC4 read of the temperature block every sensor_poll_seconds
 (sensor_regs.py), every SENSOR_FAST_POLL_SECONDS while the condenser swings
 or just after the compressor switches, paused while the bus looks unhealthy.
-With auto_reanchor it also presses keys on its own: a short walk to the
-condenser's data screen once that value has lost tracking and settled
-(reanchor_due() has the conditions).
+With auto_reanchor it also presses keys on its own: a short walk to a
+sensor's data screen once that value has lost tracking and settled
+(reanchor_due() has the conditions; REANCHOR_SCREENS has the sensors).
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .. import __version__, master, panel_settings
+from .. import __version__, display_data, master, panel_settings
 from ..data_walk import DataWalker
 from ..panel_ops import OperationBusyError
 from ..panel_settings import SettingsEditor
@@ -172,13 +172,29 @@ class SensorPollPacer:
         return min(self.normal, SENSOR_FAST_POLL_SECONDS) if self.fast else self.normal
 
 
-# Automatic re-anchor: when a swing-prone register temperature has lost
-# tracking (e.g. the condenser 2 -> 33 °C within minutes after a mode change,
-# 2026-09-17 13:05), walk the panel only down to its data screen and back once
-# it has settled. Presses keys on its own, so it is conservative: the idle
-# screen, nobody at the panel for REANCHOR_KEY_QUIET_SECONDS, no other panel
-# operation, and at most one attempt per REANCHOR_MIN_INTERVAL_SECONDS.
-REANCHOR_SCREENS = {"condenser": "LAUHDUT"}   # sensor key -> display_data screen key
+# Automatic re-anchor: when a register temperature has lost tracking (e.g.
+# the condenser swinging 2 -> 33 °C within minutes after a mode change,
+# 2026-09-17 13:05 -- but any of these four can also just go stale from a
+# gap or a step bigger than sensor_regs.AMBIGUOUS_STEP_C between polls, with
+# nothing to fix it short of a person walking the panel's NÄYTÄ DATA menu),
+# walk the panel only down to its data screen and back once it has settled.
+# The data screens come in a fixed order and every screen the walk passes
+# anchors its own sensor, so one walk to the deepest screen needed
+# re-anchors all of them (reanchor_plan) -- after a restart all four go
+# uncertain together, and walking to each separately cost four walks.
+# Presses keys on its own, so it is conservative: the idle screen, nobody at
+# the panel for REANCHOR_KEY_QUIET_SECONDS, no other panel operation, and at
+# most one attempt per REANCHOR_MIN_INTERVAL_SECONDS -- per sensor, so a slow
+# one doesn't block another from re-anchoring. Only condenser has a
+# swing_rate_c_per_s (sensor_regs.py), so REANCHOR_SETTLE_SECONDS's "settled"
+# check is trivially true for the other three: they don't swing, so there's
+# nothing to wait out before walking once they've been uncertain that long.
+REANCHOR_SCREENS = {          # sensor key -> display_data screen key
+    "tank_top": "VESI-YLÄ",
+    "tank_bottom": "VESI-ALA",
+    "supply": "MENO",
+    "condenser": "LAUHDUT",
+}
 REANCHOR_SETTLE_SECONDS = 60.0     # no swing for this long before walking
 REANCHOR_MAX_WAIT_SECONDS = 600.0  # uncertain this long: walk even if still drifting
 REANCHOR_MIN_INTERVAL_SECONDS = 600.0
@@ -202,21 +218,43 @@ def reanchor_due(
     return (settled and now - uncertain_since >= REANCHOR_SETTLE_SECONDS) or waited
 
 
+def reanchor_plan(due: list[str], uncertain: list[str], settled: list[str]) -> tuple[str, list[str]] | None:
+    """One walk for every sensor that needs one. Only a due sensor starts a
+    walk; once one does, it goes down to the deepest screen of any due or
+    uncertain-and-settled (not swinging) sensor, since a few more Downs cost
+    far less than a second walk a minute later (after a restart, supply was
+    due while the condenser had only just gone uncertain: two walks). A
+    swinging condenser never sets the depth, so it isn't anchored to a
+    value that's still moving -- unless the walk passes its screen anyway.
+    Returns (the deepest sensor, every due or uncertain sensor whose screen
+    the walk passes), or None if nothing is due."""
+    if not due:
+        return None
+    order = display_data.SCREEN_ORDER
+    depth_setters = set(due) | (set(uncertain) & set(settled))
+    target = max(depth_setters, key=lambda k: order[REANCHOR_SCREENS[k]])
+    depth = order[REANCHOR_SCREENS[target]]
+    covered = [k for k in REANCHOR_SCREENS
+               if (k in due or k in uncertain) and order[REANCHOR_SCREENS[k]] <= depth]
+    return target, covered
+
+
 def create_app(
     state: DeviceState, listener: "PassiveListener | None" = None,
     rts_direction: bool = False, sensor_poll_seconds: float = 0.0,
     auto_reanchor: bool = False,
 ) -> FastAPI:
-    async def reanchor(sensor_key: str) -> None:
-        screen_key = REANCHOR_SCREENS[sensor_key]
-        state.add_note(f"automatic {sensor_key} re-anchor started (walk to {screen_key})")
+    async def reanchor(target: str, covered: list[str]) -> None:
+        screen_key = REANCHOR_SCREENS[target]
+        names = ", ".join(covered)
+        state.add_note(f"automatic {names} re-anchor started (walk to {screen_key})")
         try:
             result = await asyncio.to_thread(
-                walker.run, target=screen_key, purpose=f"{sensor_key} re-anchor (automatic)",
+                walker.run, target=screen_key, purpose=f"{names} re-anchor (automatic)",
             )
-            state.add_note(f"automatic {sensor_key} re-anchor {result['outcome']}: {result['message']}")
+            state.add_note(f"automatic {names} re-anchor {result['outcome']}: {result['message']}")
         except OperationBusyError:
-            log.info("Automatic %s re-anchor skipped: a panel operation is running", sensor_key)
+            log.info("Automatic %s re-anchor skipped: a panel operation is running", names)
 
     async def poll_sensors() -> None:
         loop = asyncio.get_running_loop()
@@ -237,15 +275,23 @@ def create_app(
 
             if auto_reanchor and walker is not None and last_read is not None:
                 screen = state.screen()
-                for key in REANCHOR_SCREENS:
-                    if reanchor_due(wall, sensors.uncertain_since(key), last_swing_at.get(key),
-                                    last_attempt_at.get(key), state.last_physical_key_at,
-                                    screen[0].key if screen else None, walker.running):
+                screen_key = screen[0].key if screen else None
+                due_keys = [k for k in REANCHOR_SCREENS
+                            if reanchor_due(wall, sensors.uncertain_since(k), last_swing_at.get(k),
+                                            last_attempt_at.get(k), state.last_physical_key_at,
+                                            screen_key, walker.running)]
+                uncertain = [k for k in REANCHOR_SCREENS if sensors.uncertain_since(k) is not None]
+                settled = [k for k in uncertain if k not in last_swing_at
+                           or wall - last_swing_at[k] >= REANCHOR_SETTLE_SECONDS]
+                plan = reanchor_plan(due_keys, uncertain, settled)
+                if plan is not None:
+                    target, covered = plan
+                    for key in covered:
                         last_attempt_at[key] = wall
-                        log.info("Automatic re-anchor of %s: uncertain for %.0fs", key,
-                                 wall - sensors.uncertain_since(key))
-                        _background(reanchor(key))
-                        break
+                    log.info("Automatic re-anchor of %s (walk to %s): %s uncertain for %.0fs",
+                             ", ".join(covered), REANCHOR_SCREENS[target], target,
+                             wall - sensors.uncertain_since(target))
+                    _background(reanchor(target, covered))
 
             due = start_at if last_read is None else max(start_at, last_read + pacer.interval())
             if now < due:

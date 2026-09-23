@@ -18,3 +18,9 @@ class Config:
     auto_reanchor: bool = True        # short walk to LAUHDUT when the condenser loses tracking (control only)
     enable_control: bool = False      # opt-in: expose POST /api/press (writes to the bus)
     rts_direction: bool = False       # manual RTS toggling for writes -- see master.py's docstring
+    log_level: str = "INFO"           # DEBUG/INFO/WARNING/ERROR -- see __main__.py's --log-level
+    log_file: str | None = None       # None => log to stdout; else a size-rotated file (see below)
+    log_max_bytes: int = 2_000_000    # rotate --log-file once it reaches this size
+    log_backup_count: int = 3         # keep this many rotated-out copies (so ~4x log_max_bytes total)
+    capture_max_bytes: int = 20_000_000  # rotate --capture-file once it reaches this size (0 = never)
+    capture_backup_count: int = 2        # keep this many rotated-out capture files

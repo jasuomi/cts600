@@ -62,6 +62,18 @@ class StatusEndpointTests(unittest.TestCase):
                 self.state.note_reg_block(3, 0x42, reg_block(reg, encode_line(text)))
             self.assertEqual(ws.receive_json()["panel"]["setpoint"], 23)
 
+    def test_state_and_ws_snapshot_carry_panel_too(self):
+        """The dashboard's settings controls (app.js) read current
+        mode/setpoint/fan from the full snapshot (/api/state, /ws), not
+        just the compact /api/status -- both must carry "panel"."""
+        client = TestClient(server.create_app(self.state))
+        body = client.get("/api/state").json()
+        self.assertEqual(body["panel"]["mode"], "heat")
+        self.assertEqual(body["panel"]["setpoint"], 21)
+        with client.websocket_connect("/ws") as ws:
+            snap = ws.receive_json()["data"]
+            self.assertEqual(snap["panel"]["setpoint"], 21)
+
 
 if __name__ == "__main__":
     unittest.main()

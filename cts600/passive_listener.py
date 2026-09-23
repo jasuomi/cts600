@@ -47,6 +47,30 @@ TX_MAX_WAIT_SECONDS = 2.5     # ~2.4 cycles; refuse rather than transmit into a 
 SILENT_BUS_SECONDS = 1.5      # silent for longer than a cycle: nothing to collide with
 OWN_REPLY_SECONDS = 0.4       # frames this soon after our own write are replies to us, not the cycle
 
+# A key *release* isn't allowed to wait as long as a press: the panel
+# re-asserts its held AID state roughly once a second (master.py's
+# send_key_continuous docstring -- a live test held `down` for 3 cycles at
+# 1s apart and it auto-repeated through several menu screens), so a release
+# delayed by the full TX_MAX_WAIT_SECONDS on top of the intended hold makes
+# the controller see a hold several times longer than asked for, risking the
+# same auto-repeat on an ordinary single press. A release write colliding is
+# low-risk -- worst case one corrupted, discarded frame (master.py's
+# CONFIRMED WORKING note) -- so bounding this short and sending anyway is a
+# better trade than waiting long for an accurate window. This is only the
+# fallback: press_window() starts a press only when the release will find
+# a window at once, since even 0.5 s here holds the key past the panel's
+# ~0.55 s auto-repeat.
+RELEASE_MAX_WAIT_SECONDS = 0.5
+PRESS_WINDOW_MAX_SECONDS = 0.85  # see press_window()
+
+# Nothing of ours goes out this soon after a key release. On 2026-09-23
+# 23:27:51 a sensor read sent ~0.1 s behind a Down release was followed by
+# a 4-screen jump (ULKOILMA -> LAUHDUT): the key stayed down until the
+# panel's own next idle AID write ~1.9 s later, as if the release had been
+# dropped. It was the only one of 37 automated Downs with a transmission
+# that close behind the release, and the only jump.
+POST_RELEASE_QUIET_SECONDS = 1.0
+
 
 def cycle_period(starts: "list[float]") -> "float | None":
     """Median panel cycle period from recent exchange start times, ignoring
@@ -58,14 +82,16 @@ def cycle_period(starts: "list[float]") -> "float | None":
     return diffs[len(diffs) // 2]
 
 
-def tx_window_open(now: float, last_byte_time: float, starts: "list[float]") -> "tuple[bool, str]":
+def tx_window_open(now: float, last_byte_time: float, starts: "list[float]",
+                   need: float = TX_WINDOW_SECONDS) -> "tuple[bool, str]":
     """Whether transmitting right now is unlikely to collide with the
     panel<->controller cycle, plus a short reason for logs/errors.
 
     Requires the bus to be quiet (the exchange in progress has finished)
     and, when the cycle period is known, the next predicted exchange to be
-    far enough away for our frame and the controller's reply. The phase
-    check also rejects the first TX_QUIET_SECONDS of a cycle, so an
+    at least `need` away: TX_WINDOW_SECONDS for our frame and the
+    controller's reply, more for a key press (see press_window()). The
+    phase check also rejects the first TX_QUIET_SECONDS of a cycle, so an
     exchange that is merely a few ms late isn't mistaken for a skipped one.
     """
     quiet = now - last_byte_time
@@ -81,9 +107,21 @@ def tx_window_open(now: float, last_byte_time: float, starts: "list[float]") -> 
         return True, f"quiet {quiet:.2f}s, cycle estimate stale"
     phase = since % period
     to_next = period - phase
-    if phase < TX_QUIET_SECONDS or to_next < TX_WINDOW_SECONDS:
+    if phase < TX_QUIET_SECONDS or to_next < need:
         return False, f"next exchange in {to_next:.2f}s"
     return True, f"quiet {quiet:.2f}s, next exchange in {to_next:.2f}s"
+
+
+def press_window(hold_seconds: float) -> float:
+    """How far away the next exchange must be to start a key press: room
+    for the hold and then the release before it. On 2026-09-23 dashboard
+    presses started with 0.64 s or less to go had their release pushed past
+    the exchange, holding the key 0.52-0.78 s instead of 0.31 s, and 4 of 5
+    moved two menu screens (the panel auto-repeats a key held past ~0.55 s);
+    all 7 started with 0.72 s or more moved one. Capped so a long requested
+    hold still finds a window (after TX_QUIET_SECONDS, at most ~0.93 s of a
+    1.035 s cycle is left)."""
+    return min(hold_seconds + TX_WINDOW_SECONDS, PRESS_WINDOW_MAX_SECONDS)
 
 
 class PassiveListener:
@@ -94,6 +132,7 @@ class PassiveListener:
         self._reader: transport.FrameReader | None = None
         self._ser = None
         self._write_lock = threading.Lock()
+        self._key_released_at = float("-inf")  # monotonic; see POST_RELEASE_QUIET_SECONDS
 
         # Recent bus timing, for placing key-press writes in the silence
         # between panel<->controller exchanges (see tx_window_open()).
@@ -149,8 +188,13 @@ class PassiveListener:
         with self._write_lock:
             master.send_key_press(
                 self._ser, key, hold_seconds=hold_seconds, use_rts=use_rts,
-                before_write=lambda stage: self._wait_for_tx_window(strict=stage == "press"),
+                before_write=lambda stage: self._wait_for_tx_window(
+                    strict=stage == "press",
+                    max_wait=TX_MAX_WAIT_SECONDS if stage == "press" else RELEASE_MAX_WAIT_SECONDS,
+                    need=press_window(hold_seconds) if stage == "press" else TX_WINDOW_SECONDS,
+                ),
             )
+            self._key_released_at = time.monotonic()
 
     def read_sensor_block(self, use_rts: bool = True) -> "list[int] | None":
         """One atomic FC4 read of the sensor block, fed into state.sensors.
@@ -164,7 +208,7 @@ class PassiveListener:
             protocol.FunctionCode.READ_INPUT_REGS, sensor_regs.BLOCK_START, sensor_regs.BLOCK_COUNT, use_rts,
         )
         if words is None:
-            log.info("Sensor block read: %s", "exception reply" if frame is not None else "timeout")
+            log.debug("Sensor block read: %s", "exception reply" if frame is not None else "timeout")
             return None
         self.state.note_sensor_block(words)
         return words
@@ -234,23 +278,28 @@ class PassiveListener:
             return frame, [(byte >> i) & 1 for byte in data for i in range(8)]
         return None, None
 
-    def _wait_for_tx_window(self, strict: bool = True) -> None:
+    def _wait_for_tx_window(self, strict: bool = True, max_wait: float = TX_MAX_WAIT_SECONDS,
+                            need: float = TX_WINDOW_SECONDS) -> None:
         """Block until tx_window_open() allows a write, then mark the write
         so the controller's reply isn't mistaken for a cycle exchange. After
-        TX_MAX_WAIT_SECONDS: raise BusBusyError if strict, otherwise log and
-        return so the caller sends anyway."""
+        max_wait: raise BusBusyError if strict, otherwise log and return so
+        the caller sends anyway. Never earlier than POST_RELEASE_QUIET_SECONDS
+        after our own last key release, whatever the bus looks like."""
         t0 = time.monotonic()
         while True:
             with self._timing_lock:
                 starts = list(self._exchange_starts)
-            ok, why = tx_window_open(time.time(), self._reader.last_byte_time, starts)
-            if ok or time.monotonic() - t0 >= TX_MAX_WAIT_SECONDS:
+            if time.monotonic() - self._key_released_at < POST_RELEASE_QUIET_SECONDS:
+                ok, why = False, "just after our own key release"
+            else:
+                ok, why = tx_window_open(time.time(), self._reader.last_byte_time, starts, need)
+            if ok or time.monotonic() - t0 >= max_wait:
                 if not ok:
                     if strict:
-                        raise transport.BusBusyError(f"no safe transmit window within {TX_MAX_WAIT_SECONDS:.1f}s ({why})")
-                    log.warning("No safe TX window within %.1fs (%s); sending anyway", TX_MAX_WAIT_SECONDS, why)
+                        raise transport.BusBusyError(f"no safe transmit window within {max_wait:.1f}s ({why})")
+                    log.warning("No safe TX window within %.1fs (%s); sending anyway", max_wait, why)
                 else:
-                    log.info("TX window after %.2fs: %s", time.monotonic() - t0, why)
+                    log.debug("TX window after %.2fs: %s", time.monotonic() - t0, why)
                 with self._timing_lock:
                     self._own_tx_at = time.time()
                 return
