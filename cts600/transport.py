@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import glob
 import os
+import select
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -35,6 +36,14 @@ FRAME_IDLE_SECONDS = 0.01
 # two real frames are never merged.
 FRAME_JOIN_SECONDS = 0.02
 MAX_FRAME_BYTES = 256  # Modbus RTU maximum
+MIN_FRAME_BYTES = 4    # address, function, 2-byte CRC
+
+# With nothing buffered, wait up to this long for the port to become
+# readable instead of spinning on the 1 ms read timeout. The bus is silent
+# ~95% of the time, and on the Pi 1 the spin alone cost ~35% CPU
+# (2026-09-24). Byte timing is unaffected: select() returns as soon as
+# data arrives, and a frame in progress still polls every 1 ms.
+IDLE_WAIT_SECONDS = 0.1
 
 
 class BusBusyError(RuntimeError):
@@ -164,6 +173,12 @@ class FrameReader:
     So a chunk failing is_valid() is held for up to join_seconds, and
     joined with the next chunk if the joined bytes are valid. A genuinely
     corrupted frame is still emitted as-is once the window passes.
+
+    The opposite happens too: a read thread stalled past the ~39 ms gap
+    between two frames reads both in one chunk. Seen on the Pi 1
+    (2026-09-24, ~1.6% of frames): 12+20 and 12+11 bytes, each part with a
+    valid CRC. So valid frames are peeled off the front of a failing chunk
+    and emitted separately; only what's left is held or emitted as bad.
     """
 
     def __init__(
@@ -183,6 +198,7 @@ class FrameReader:
         self._chunk_start = 0.0                # when the current chunk's first byte was read
         self._ready: list[RawFrame] = []
         self.joined_count = 0
+        self.split_count = 0
 
     def stop(self) -> None:
         self._stop = True
@@ -197,6 +213,8 @@ class FrameReader:
         """Read whatever is available; return a completed frame, if any."""
         if self._ready:
             return self._ready.pop(0)
+        if not self._buf and self._pending is None:
+            self._wait_readable(IDLE_WAIT_SECONDS)
         # Everything already buffered in one call, not byte by byte: less
         # Python work per byte keeps the read thread on time.
         b = self._ser.read(max(1, self._ser.in_waiting))
@@ -215,6 +233,13 @@ class FrameReader:
         elif self._pending is not None and not self._buf and now - self._pending_end > self._join_seconds:
             self._emit_pending(now)
         return self._ready.pop(0) if self._ready else None
+
+    def _wait_readable(self, timeout: float) -> None:
+        try:
+            fd = self._ser.fileno()
+        except (AttributeError, OSError, ValueError, serial.SerialException):
+            return  # nothing to wait on (Windows, test fakes): the 1 ms read timeout paces the loop
+        select.select([fd], [], [], timeout)
 
     def _chunk(self, chunk: bytes, now: float) -> None:
         valid = self._is_valid
@@ -235,12 +260,34 @@ class FrameReader:
             self._emit_pending(now)
         if valid(chunk):
             self._ready.append(RawFrame(now, chunk))
-        else:
-            self._pending, self._pending_end = chunk, self._last_byte_time
+            return
+        rest = self._peel(chunk, now)
+        if rest:  # maybe the head of a frame whose tail is still coming
+            self._pending, self._pending_end = rest, self._last_byte_time
+
+    def _peel(self, chunk: bytes, now: float) -> bytes:
+        """Emit the valid frames at the front of `chunk` (several frames
+        read as one); return what's left after them."""
+        peeled = False
+        while len(chunk) >= 2 * MIN_FRAME_BYTES:
+            k = next((k for k in range(MIN_FRAME_BYTES, min(len(chunk), MAX_FRAME_BYTES) + 1)
+                      if self._is_valid(chunk[:k])), None)
+            if k is None:
+                break
+            self._ready.append(RawFrame(now, chunk[:k]))
+            chunk, peeled = chunk[k:], True
+            if self._is_valid(chunk):
+                self._ready.append(RawFrame(now, chunk))
+                chunk = b""
+                break
+        self.split_count += peeled
+        return chunk
 
     def _emit_pending(self, now: float) -> None:
-        self._ready.append(RawFrame(now, self._pending))
-        self._pending = None
+        pending, self._pending = self._pending, None
+        rest = self._peel(pending, now)
+        if rest:
+            self._ready.append(RawFrame(now, rest))
 
     def read_forever(self, on_frame: Callable[[RawFrame], None]) -> None:
         """Blocking loop; calls on_frame(frame) for each completed frame.

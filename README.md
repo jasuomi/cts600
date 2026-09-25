@@ -63,10 +63,12 @@ Options:
   (default 10; 0 turns the poll off)
 - `--sensors-file PATH` — where the register temperatures are kept across
   restarts (default `data/sensor_regs.json`)
-- `--no-auto-reanchor` — don't walk to the condenser screen automatically
-  (see Live temperatures)
-- `--rts-direction` — manual RS485 transmit-enable via RTS (needed on this
-  installation's converter)
+- `--no-auto-reanchor` — don't walk to a sensor's data screen
+  automatically (see Automatic re-anchor)
+- `--rts-direction` — manual RS485 transmit-enable via RTS. Needed with
+  the original RS232-to-RS485 converter on `/dev/ttyS0`; not with the
+  FTDI USB adapter (FT232R), which switches direction itself -- tested
+  2026-09-24, every sensor read answered without it
 - `--readings-file PATH` — where the last readings are kept across
   restarts (default `data/display_readings.json`)
 - `--capture-file PATH` — append every decoded event to a JSONL file
@@ -86,6 +88,54 @@ Options:
   (default 2000000 ~ 2 MB)
 - `--log-backup-count N` — how many rotated-out log files to keep (default
   3, so about 4x `--log-max-bytes` on disk at most)
+
+## Run at boot
+
+Both service files start the dashboard at boot and restart it after any
+exit or crash, retrying for as long as it takes (e.g. while the USB
+serial adapter isn't there yet). Their paths and flags match the
+installs they were written for; adjust them for another checkout. Stop
+any instance started by hand first: the serial port opens exclusively,
+so a second instance fails and keeps being retried.
+
+**Alpine (OpenRC)** -- `deploy/cts600.openrc`, for the Raspberry Pi,
+restarting 30 s after an exit (a start costs ~22 s of CPU on a Pi 1).
+It runs as the user named in `/etc/conf.d/cts600`, from that user's
+`~/cts600`; the user needs group `dialout` for the USB serial adapter.
+From the checkout, as that user:
+
+```
+doas addgroup $USER dialout
+doas install -m 755 deploy/cts600.openrc /etc/init.d/cts600
+echo "CTS600_USER=$USER" | doas tee /etc/conf.d/cts600
+doas rc-update add cts600 default
+doas rc-service cts600 start
+```
+
+`/etc/conf.d/cts600` can also set `CTS600_DIR` (default
+`/home/$CTS600_USER/cts600`) and `CTS600_ARGS` (default: the flags in
+the service file). Then `rc-service cts600 status` / `restart`; anything
+printed outside the log file (e.g. a traceback before logging starts)
+goes to `console.log` in `CTS600_DIR`.
+
+**systemd** -- `deploy/cts600.service`, a *user* service for a checkout
+in `~/cts600_v1`, restarting 10 s after an exit. Installed and managed
+without sudo; letting it start before anyone logs in needs linger, once:
+
+```
+mkdir -p ~/.config/systemd/user
+cp deploy/cts600.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now cts600
+loginctl enable-linger $USER    # may need sudo
+```
+
+Then `systemctl --user status cts600` / `restart`, and `journalctl
+--user -u cts600` for anything printed outside the log file. Per-host
+flags (e.g. `--port /dev/ttyS0 --rts-direction` for the RS232-to-RS485
+converter) go in a drop-in rather than the unit:
+`~/.config/systemd/user/cts600.service.d/override.conf` with an empty
+`ExecStart=` line, then the full `ExecStart=...` line.
 
 ## Pages
 

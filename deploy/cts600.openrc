@@ -1,0 +1,34 @@
+#!/sbin/openrc-run
+# OpenRC service (Alpine): start at boot, restart if it exits. Install steps
+# are in the README ("Run at boot"). Per-host settings go in
+# /etc/conf.d/cts600: CTS600_USER (required), CTS600_DIR, CTS600_ARGS.
+
+: "${CTS600_DIR:=/home/${CTS600_USER}/cts600}"
+: "${CTS600_ARGS:=--http-host 0.0.0.0 --http-port 8600 --enable-control --log-file cts600.log --log-level INFO}"
+
+name="cts600"
+description="CTS600 dashboard and panel bridge"
+supervisor="supervise-daemon"
+command="/usr/bin/python3"
+command_args="-m cts600 ${CTS600_ARGS}"
+command_user="${CTS600_USER}"
+directory="${CTS600_DIR}"
+supervise_daemon_args="--env PYTHONUNBUFFERED=1"
+# Anything printed outside the log file, e.g. a traceback before logging starts.
+output_log="${CTS600_DIR}/console.log"
+error_log="${CTS600_DIR}/console.log"
+# A start costs ~22 s of CPU on a Pi 1 (imports), so don't retry faster.
+respawn_delay=30
+respawn_max=0
+
+depend() {
+	need net
+	after ntpd
+}
+
+start_pre() {
+	if [ -z "${CTS600_USER}" ]; then
+		eerror "Set CTS600_USER in /etc/conf.d/cts600"
+		return 1
+	fi
+}

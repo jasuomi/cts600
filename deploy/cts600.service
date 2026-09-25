@@ -1,0 +1,18 @@
+# systemd user service: start at boot, restart if it exits. Install steps
+# are in the README ("Run at boot"). Paths and flags match the Pi install.
+
+[Unit]
+Description=CTS600 dashboard and panel bridge
+# Keep retrying forever, e.g. while the USB serial adapter is missing.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cts600_v1
+ExecStart=/usr/bin/python3 -m cts600 --http-host 0.0.0.0 --http-port 8600 --enable-control --rts-direction --capture-file sessions/capture.jsonl --log-file cts600.log --log-level INFO
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

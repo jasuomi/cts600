@@ -6,7 +6,10 @@ Run from the project root: python -m unittest discover -s tests
 
 from __future__ import annotations
 
+import socket
 import sys
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -20,6 +23,7 @@ LINE2 = bytes.fromhex("03 42 02 0A 00 05 00 0A 3E 33 3C 20 32 32 DF 43 00 00 01 
 LINE1 = bytes.fromhex("03 42 02 00 00 05 00 0A 41 55 54 4F 20 20 20 20 00 00 4C 1B")
 HEARTBEAT = bytes.fromhex("03 42 00 2A 00 01 00 02 00 EF E5 FE")
 BITS = bytes.fromhex("03 41 01 00 00 02 00 01 01 D4 0A")
+AID = bytes.fromhex("03 42 01 00 00 01 00 02 00 00 67 F5")  # the panel's idle key register
 
 
 class FakeClock:
@@ -97,6 +101,28 @@ class FramingTests(unittest.TestCase):
         frames, _ = run([(0.0, bad), (0.013, HEARTBEAT)])
         self.assertEqual(frames, [bad, HEARTBEAT])
 
+    def test_frames_read_as_one_chunk_are_split(self):
+        # As seen on the Pi 1 (2026-09-24): 12+20 and 12+11 bytes in one read.
+        for a, b in ((AID, LINE2), (HEARTBEAT, BITS)):
+            frames, reader = run([(0.0, a + b), (0.5, HEARTBEAT)])
+            self.assertEqual(frames, [a, b, HEARTBEAT])
+            self.assertEqual(reader.split_count, 1)
+
+    def test_three_frames_in_one_chunk(self):
+        frames, _ = run([(0.0, AID + LINE1 + BITS)])
+        self.assertEqual(frames, [AID, LINE1, BITS])
+
+    def test_merged_frame_and_the_next_ones_head(self):
+        # A whole frame plus the first 8 bytes of the next; its tail 12 ms later.
+        frames, reader = run([(0.0, AID + LINE2[:8]), (0.012, LINE2[8:])])
+        self.assertEqual(frames, [AID, LINE2])
+        self.assertEqual((reader.split_count, reader.joined_count), (1, 1))
+
+    def test_corrupt_second_frame_is_emitted_alone(self):
+        bad = LINE2[:-1] + b"\x00"
+        frames, _ = run([(0.0, AID + bad)])
+        self.assertEqual(frames, [AID, bad])
+
     def test_without_validator_behaves_as_before(self):
         clock = FakeClock()
         ser = FakeSerial(clock, [(clock.t, LINE2[:16]), (clock.t + 0.012, LINE2[16:])])
@@ -108,6 +134,68 @@ class FramingTests(unittest.TestCase):
                 if f:
                     frames.append(f.data)
         self.assertEqual(frames, [LINE2[:16], LINE2[16:]])
+
+
+class SocketSerial:
+    """A port with a real file descriptor, so FrameReader's select() wait
+    can be exercised: bytes sent on `peer` arrive here."""
+
+    def __init__(self) -> None:
+        self._sock, self.peer = socket.socketpair()
+        self._sock.setblocking(False)
+
+    def fileno(self) -> int:
+        return self._sock.fileno()
+
+    def close(self) -> None:
+        self._sock.close()
+        self.peer.close()
+
+    @property
+    def in_waiting(self) -> int:
+        try:
+            return len(self._sock.recv(4096, socket.MSG_PEEK))
+        except BlockingIOError:
+            return 0
+
+    def read(self, n: int) -> bytes:
+        try:
+            return self._sock.recv(n)
+        except BlockingIOError:
+            time.sleep(0.001)  # the 1 ms read timeout
+            return b""
+
+
+class IdleWaitTests(unittest.TestCase):
+    """With nothing buffered the reader waits in select() instead of
+    spinning on the 1 ms read timeout (35% CPU on the Pi 1)."""
+
+    def serial(self) -> SocketSerial:
+        ser = SocketSerial()
+        self.addCleanup(ser.close)
+        return ser
+
+    def test_idle_poll_waits_instead_of_spinning(self):
+        reader = transport.FrameReader(self.serial(), is_valid=protocol.verify_crc)
+        with mock.patch.object(transport, "IDLE_WAIT_SECONDS", 0.2):
+            t0 = time.monotonic()
+            self.assertIsNone(reader.poll_once())
+            self.assertGreaterEqual(time.monotonic() - t0, 0.15)
+
+    def test_arriving_bytes_wake_it_and_still_frame(self):
+        ser = self.serial()
+        reader = transport.FrameReader(ser, is_valid=protocol.verify_crc)
+        sender = threading.Timer(0.05, ser.peer.sendall, args=(BITS,))
+        sender.start()
+        self.addCleanup(sender.join)
+        with mock.patch.object(transport, "IDLE_WAIT_SECONDS", 2.0):
+            t0 = time.monotonic()
+            frame = None
+            while frame is None and time.monotonic() - t0 < 1.0:
+                frame = reader.poll_once()
+        self.assertIsNotNone(frame)
+        self.assertEqual(frame.data, BITS)
+        self.assertLess(time.monotonic() - t0, 0.5)  # woke on the data, not after the 2 s wait
 
 
 class BogusNodeTests(unittest.TestCase):
